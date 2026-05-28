@@ -65,19 +65,16 @@ worldbuilder 负责以下数据流转和协调工作：
     ↓
 [阶段检查点 2] 验证所有章节已完成，记录写入进度
     ↓
-[sumeru-review] 逻辑审查（**审查所有章节，每个Agent最多3章**）
+[sumeru-review] 逻辑审查（**审查所有章节，自动修订大纲+重写严重问题章节，每个Agent最多3章**）
     → 输入: .sumeru/outline/*.json, chapters/*.md
-    → 输出: 剧情审查报告.md, .sumeru/review/*.json, .sumeru/review/fix-plan.json
-    → ✅ **必须完成全本审查**
+    → 输出: 剧情审查报告.md, .sumeru/review/*.json（含 outline-revisions.json, bottom-line-checklist.json）
+    → ✅ **必须完成全本审查+底线问题零遗漏核验**
+    → 🔧 **严重问题自动修订大纲并重写章节，不再只生成 fix-plan.json 等待外部调用**
     → ⚠️ **遵循全局3章/Agent约束**
     ↓
-[阶段检查点 3] 验证审查完成，检查 fix-plan.json 是否有重写修复项
+[阶段检查点 3] 验证审查完成，确认底线问题已全部解决或标记「需人工干预」
     ↓
-{fix-plan.json 有重写修复项?}
-    →|是| [调用sumeru-write重写指定章节 → 直接修改 chapters/（自动备份到 .sumeru/write/original/）]
-    →|否| 继续
-    ↓
-[review 轻量修复已直接修改 chapters/，无需额外应用步骤]
+[review 已自动完成大纲修订+章节重写+轻量修复，直接修改了 chapters/（自动备份到 .sumeru/write/original/）]
     ↓
 [sumeru-polish] 内容润色（**润色所有章节，每个Agent最多3章**）
     → 输入: chapters/*.md, .sumeru/review/*.json
@@ -98,7 +95,7 @@ worldbuilder 负责以下数据流转和协调工作：
 每个阶段完成后都会自动更新 `WORKBUILDER_PROGRESS.json`，任务重启时从上次未完成的阶段继续：
 - **大纲阶段**：确认 `chapter-outlines.json` 生成且包含完整章节列表
 - **创作阶段**：检查 `chapters/` 目录下已生成章节数与细纲一致
-- **审查阶段**：确认 `剧情审查报告.md` 生成且包含全本审查结果，确认 `fix-plan.json` 已生成。review 的轻量修复已直接修改 `chapters/`，修改前已自动备份到 `.sumeru/write/original/`
+- **审查阶段**：确认 `剧情审查报告.md` 生成且包含全本审查结果。review 已自动完成大纲修订、章节重写和轻量修复（直接修改了 `chapters/`，修改前已自动备份到 `.sumeru/write/original/`）。确认 `bottom-line-checklist.json` 中所有底线问题已标记为「已解决」或「需人工干预」
 - **润色阶段**：确认润色已直接修改 `chapters/` 中的文件。润色修改前已自动备份到 `.sumeru/write/original/`
 - **完稿阶段**：确认 `publish/` 目录下各平台格式导出完成
 
@@ -122,14 +119,14 @@ flowchart LR
     C --> D[调用 outline 大纲设计]
     D --> E[调用 write 完整章节撰写]
     E -->|✅ 全部章节完成| F[调用 review 全本逻辑审查]
-    F --> G{fix-plan.json 有重写项?}
-    G -->|是| H[调用 write 重写指定章节]
-    H --> I[直接修改 chapters/，自动备份到 .sumeru/write/original/]
-    I --> J[调用 polish 全本内容润色]
-    G -->|否| J
-    J --> K{润色确认?}
+    F --> F1{review 发现严重问题?}
+    F1 -->|是| F2[review 自动修订大纲+重写章节]
+    F2 --> F3[直接修改 chapters/，自动备份到 .sumeru/write/original/]
+    F3 --> G[调用 polish 全本内容润色]
+    F1 -->|否| G
+    G --> K{润色确认?}
     K -->|否| L[针对性调整润色]
-    L --> J
+    L --> G
     K -->|是| M[调用 finalize 完稿校验]
     M --> N[生成创作报告与作品文件]
     
@@ -137,7 +134,7 @@ flowchart LR
         O[WORKBUILDER_PROGRESS.json]
         E -->|保存进度| O
         F -->|保存进度| O
-        J -->|保存进度| O
+        G -->|保存进度| O
         M -->|保存进度| O
     end
 ```
@@ -149,15 +146,16 @@ flowchart LR
 4. **大纲阶段**：先输出世界观与人设，确认后生成完整大纲和**所有章节细纲**，完成后更新进度文件
 5. **创作阶段**：按细纲驱动批量创作所有章节，支持并行生成，**必须完成所有章节**后才进入下一阶段（遵循全局3章/Agent约束），完成后更新进度文件
 6. **审查阶段**：调用 `sumeru-review` 执行三阶段审查修复流程（遵循全局3章/Agent约束）：
-    - **第一阶段：全局审查**：分析整体剧情脉络、时间线、设定一致性、冲突点分布、伏笔回收状态
+    - **第一阶段：全局审查**：分析整体剧情脉络、时间线、设定一致性、冲突点分布、伏笔回收状态，**执行底线问题扫描**生成 `bottom-line-checklist.json`
     - **第二阶段：章节细节审查**：逐章检查字数、时间线、人物OOC、物品状态、场景质量、伏笔设置
     - **第三阶段：统一修复**：
       - 合并全局和章节问题，按严重程度制定修复计划
       - 执行**轻量修复**（文字修正、段落调整、字数填充等），直接修改 `chapters/` 文件（自动备份到 `.sumeru/write/original/`）
-      - 对需要**重写修复**的章节，生成 `fix-plan.json`，记录问题与修复建议
+      - 对**严重问题自动闭环修复**：修订 `.sumeru/outline/chapter-outlines.json` 中受影响章节的细纲，然后基于修订后的细纲使用子Agent并行重写对应章节，直接修改 `chapters/`（自动备份到 `.sumeru/write/original/`），修订记录保存到 `outline-revisions.json`
+      - 执行**底线问题零遗漏核验**：六类底线问题（时间线矛盾、设定崩坏、人物OOC、重复情节、信息泄露、伏笔死结）必须全部解决或标记「需人工干预」
     - **字数检查与填充**：在第二阶段逐章统计字数，对不足的章节自动填充内容（强化场景描写、丰富对话、补充心理活动等）
-    - **自动修复所有问题**：不只是提出问题，而是自动修复所有轻量级问题
-    - worldbuilder 读取 `fix-plan.json`，如有重写项则调用 `sumeru-write` 重写指定章节，直接修改 `chapters/`
+    - **自动修复所有问题**：不只是提出问题，而是自动修复所有问题（轻量修复+大纲修订+章节重写）
+    - review 自动完成大纲修订和章节重写，不再需要 worldbuilder 额外调用 sumeru-write 进行重写
     - 修复完成后重新验证，确保所有问题已解决
     - 完成后更新进度文件
 7. **润色阶段**：调用 `sumeru-polish` 进行全本内容润色（遵循全局3章/Agent约束），提供多种润色风格选项（精简/详写/抒情/热血等）
@@ -366,7 +364,10 @@ flowchart LR
 ├── review/           # 审查阶段输出
 │   ├── timeline.json # 时间线数据
 │   ├── issues.json   # 问题清单
-│   ├── fix-plan.json # 重写修复计划
+│   ├── fix-plan.json # 修复计划
+│   ├── outline-revisions.json # 大纲修订记录
+│   ├── bottom-line-checklist.json # 底线问题清单
+│   ├── rewrite-chapters/ # 重写章节修订记录
 │   └── plot-map.json # 剧情脉络图
 ├── polish/           # 润色阶段输出
 │   └── diff.json     # 修改对比记录
@@ -421,15 +422,22 @@ flowchart LR
       "output_files": [
         "剧情审查报告.md",
         ".sumeru/review/issues.json",
-        ".sumeru/review/fix-plan.json"
+        ".sumeru/review/fix-plan.json",
+        ".sumeru/review/outline-revisions.json",
+        ".sumeru/review/bottom-line-checklist.json"
       ],
       "statistics": {
         "total_issues_found": 8,
         "critical_issues": 2,
-        "issues_fixed": 6,
-        "issues_rewritten": 2
+        "issues_fixed_lightweight": 4,
+        "issues_fixed_rewrite": 2,
+        "outline_revisions": 1,
+        "bottom_line_resolved": 2,
+        "bottom_line_manual": 0
       },
-      "fix_plan_generated": true
+      "outline_revised": true,
+      "chapters_rewritten": true,
+      "bottom_line_all_resolved": true
     },
     "polish": {
       "status": "in_progress",
