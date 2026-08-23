@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 串行执行，防止并发发布产生版本号竞争
+concurrency:
+  group: release-master
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # 双保险：跳过 bot 自身提交（[skip ci] 之外的第二道防线，防止死循环）
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 完整历史 + tags，用于版本计算与 changelog 生成
+
+      - name: Compute next version & changelog
+        id: prep
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
+          LAST_TAG="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+          echo "last_tag=$LAST_TAG" >> "$GITHUB_OUTPUT"
+
+          if [ -z "$LAST_TAG" ]; then
+            # 首次发布：使用 VERSION 文件中的初始版本号（0.1.0）
+            NEW_VERSION="$(tr -d '[:space:]' < VERSION)"
+            RANGE_ARG="HEAD"
+          else
+            RANGE_ARG="${LAST_TAG}..HEAD"
+
+            # 无新提交（排除版本发布提交本身）则跳过发布
+            NEW_COMMITS="$(git log "$RANGE_ARG" --oneline -E --invert-grep --grep='^chore\(release\)' || true)"
+            if [ -z "$NEW_COMMITS" ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "No new commits since $LAST_TAG, skip release."
+              exit 0
+            fi
+
+            # 解析上一版本号
+            LAST_VERSION="${LAST_TAG#v}"
+            MAJOR="${LAST_VERSION%%.*}"
+            MINOR="$(echo "$LAST_VERSION" | cut -d. -f2)"
+            PATCH="$(echo "$LAST_VERSION" | cut -d. -f3)"
+
+            # Conventional Commits 驱动的版本升级规则：
+            #   BREAKING CHANGE / feat!:  -> 1.x 及以上升主版本号；0.x 阶段升次版本号
+            #   feat:                      -> 升次版本号
+            #   其余（fix/docs/chore...） -> 升修订号
+            SUBJECTS="$(git log "$RANGE_ARG" --pretty=format:'%s')"
+            BODIES="$(git log "$RANGE_ARG" --pretty=format:'%b')"
+            IS_BREAKING=0
+            if printf '%s\n%s\n' "$SUBJECTS" "$BODIES" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' \
+               || printf '%s\n%s\n' "$SUBJECTS" "$BODIES" | grep -qi '^BREAKING CHANGE'; then
+              IS_BREAKING=1
+            fi
+            HAS_FEAT=0
+            if printf '%s\n' "$SUBJECTS" | grep -qE '^feat(\([^)]*\))?!?:'; then
+              HAS_FEAT=1
+            fi
+
+            if [ "$IS_BREAKING" -eq 1 ]; then
+              if [ "$MAJOR" -gt 0 ]; then
+                MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0
+              else
+                MINOR=$((MINOR + 1)); PATCH=0
+              fi
+            elif [ "$HAS_FEAT" -eq 1 ]; then
+              MINOR=$((MINOR + 1)); PATCH=0
+            else
+              PATCH=$((PATCH + 1))
+            fi
+            NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Next release version: v$NEW_VERSION"
+
+          # ---- 生成 changelog（按提交类型分组）----
+          FEATS="$(git log "$RANGE_ARG" --pretty=format:'- %s (%h)' -E --grep='^feat(\(|!|:)' || true)"
+          FIXES="$(git log "$RANGE_ARG" --pretty=format:'- %s (%h)' -E --grep='^fix(\(|!|:)' || true)"
+          OTHERS="$(git log "$RANGE_ARG" --pretty=format:'- %s (%h)' -E --invert-grep \
+                     --grep='^(feat|fix)(\(|!|:)' --grep='^chore\(release\)' || true)"
+
+          {
+            echo "## What's Changed"
+            echo ""
+            if [ -n "$FEATS" ]; then echo "### ✨ Features"; echo "$FEATS"; echo ""; fi
+            if [ -n "$FIXES" ]; then echo "### 🐛 Bug Fixes"; echo "$FIXES"; echo ""; fi
+            if [ -n "$OTHERS" ]; then echo "### 📝 Other Changes"; echo "$OTHERS"; echo ""; fi
+            if [ -n "$LAST_TAG" ]; then
+              echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...v${NEW_VERSION}"
+            else
+              echo "🎉 首个发布版本。"
+            fi
+          } > CHANGELOG.md
+
+      - name: Update version files
+        if: steps.prep.outputs.skip != 'true'
+        env:
+          NEW_VERSION: ${{ steps.prep.outputs.version }}
+        run: |
+          set -euo pipefail
+          echo "$NEW_VERSION" > VERSION
+          sed -i -E "s/当前版本：v?[0-9]+\.[0-9]+\.[0-9]+/当前版本：v${NEW_VERSION}/" CLAUDE.md
+          echo "VERSION -> $NEW_VERSION"
+
+      - name: Commit, tag and create release
+        if: steps.prep.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.prep.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 提交版本号变更（首个版本时文件已是目标值，则直接对 HEAD 打 tag）
+          git add VERSION CLAUDE.md
+          if git diff --cached --quiet; then
+            echo "Version files unchanged, tagging current HEAD."
+          else
+            git commit -m "chore(release): v${NEW_VERSION} [skip ci]"
+          fi
+
+          git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
+          git push origin master "v${NEW_VERSION}"
+
+          gh release create "v${NEW_VERSION}" \
+            --title "v${NEW_VERSION}" \
+            --notes-file CHANGELOG.md
