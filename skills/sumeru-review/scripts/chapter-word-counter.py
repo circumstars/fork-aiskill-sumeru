@@ -3,7 +3,7 @@
 """
 网文章节字数统计工具
 功能：精确统计各章节字数，识别过长/过短章节，生成统计报告
-输出：自动保存到 .sumeru/review/word-count-report.json 和 .sumeru/review/word-count-report.md
+输出：自动保存到 .sumeru/review/word-count.json 和 .sumeru/review/word-count.md
 """
 
 import os
@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 # 配置参数
-DEFAULT_CHAPTER_PATTERN = r"chapter-\d+\.md|第\d+章.*\.md|\d+\.md"
-DEFAULT_WORD_RANGE = (2000, 3000)  # 默认理想章节字数范围：2000-3000字
-WARNING_RANGE = (1500, 3500)        # 警告范围：小于1500或大于3500字触发警告
+DEFAULT_CHAPTER_PATTERN = r"\d{3,4}-.*\.md"    # 项目章节命名规范：001-标题.md（三位零填充，兼容四位的1000+章）
+DEFAULT_WORD_RANGE = (3000, 5000)  # 默认理想章节字数范围：3000-5000字（与sumeru-write默认产出对齐）
+WARNING_RANGE = (2000, 6000)        # 警告范围：小于2000或大于6000字触发警告
 
 
 def count_words(text: str) -> Tuple[int, int, int, int]:
@@ -148,12 +148,12 @@ def generate_report(analysis_result: Dict, output_dir: str = ".sumeru/review") -
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     # 保存JSON格式报告
-    json_path = os.path.join(output_dir, "word-count-report.json")
+    json_path = os.path.join(output_dir, "word-count.json")
     with open(json_path, 'w', encoding='utf-8') as f:
         json.dump(analysis_result, f, ensure_ascii=False, indent=2)
 
     # 生成Markdown格式报告
-    md_path = os.path.join(output_dir, "word-count-report.md")
+    md_path = os.path.join(output_dir, "word-count.md")
     summary = analysis_result["summary"]
 
     md_content = f"""# 章节字数统计报告

@@ -351,7 +351,7 @@ flowchart LR
   - `sumeru-review` 直接读取大纲数据校验剧情偏离度
 
 ### 内置参考资源库
-outline技能内置多风格参考信息库，位于 `skills/outline/references/` 目录下，生成大纲时可自动引用匹配风格的参考内容：
+outline技能内置多风格参考信息库，位于 `skills/sumeru-outline/references/` 目录下，生成大纲时可自动引用匹配风格的参考内容：
 
 | 参考文件 | 内容说明 | 适用风格 |
 |---------|---------|----------|

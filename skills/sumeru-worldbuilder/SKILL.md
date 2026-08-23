@@ -92,7 +92,7 @@ worldbuilder 负责以下数据流转和协调工作：
 ```
 
 #### 关键阶段检查点说明
-每个阶段完成后都会自动更新 `WORKBUILDER_PROGRESS.json`，任务重启时从上次未完成的阶段继续：
+每个阶段完成后都会自动更新 `.sumeru/session/WORLDBUILDER_PROGRESS.json`，任务重启时从上次未完成的阶段继续：
 - **大纲阶段**：确认 `chapter-outlines.json` 生成且包含完整章节列表
 - **创作阶段**：检查 `chapters/` 目录下已生成章节数与细纲一致
 - **审查阶段**：确认 `剧情审查报告.md` 生成且包含全本审查结果。review 已自动完成大纲修订、章节重写和轻量修复（直接修改了 `chapters/`，修改前已自动备份到 `.sumeru/write/original/`）。确认 `bottom-line-checklist.json` 中所有底线问题已标记为「已解决」或「需人工干预」
@@ -131,7 +131,7 @@ flowchart LR
     M --> N[生成创作报告与作品文件]
     
     subgraph 进度保存
-        O[WORKBUILDER_PROGRESS.json]
+        O[WORLDBUILDER_PROGRESS.json]
         E -->|保存进度| O
         F -->|保存进度| O
         G -->|保存进度| O
@@ -140,7 +140,7 @@ flowchart LR
 ```
 
 **详细流程说明**：
-1. **初始化阶段**：验证输入参数有效性，创建工作目录，初始化创作状态，创建 `WORKBUILDER_PROGRESS.json` 进度文件
+1. **初始化阶段**：验证输入参数有效性，创建工作目录，初始化创作状态，创建 `.sumeru/session/WORLDBUILDER_PROGRESS.json` 进度文件
 2. **需求收集阶段**：智能判断用户提供的信息是否充足，如信息不足则自动触发交互式提问引导用户补充需求，确认所有需求后进入下一阶段
 3. **选题阶段**：基于收集到的完整需求生成3-5个精准匹配的选题方案供选择，确定后进入大纲设计，完成后更新进度文件
 4. **大纲阶段**：先输出世界观与人设，确认后生成完整大纲和**所有章节细纲**，完成后更新进度文件
@@ -347,6 +347,7 @@ flowchart LR
 ├── session/          # 会话全局数据
 │   ├── config.json   # 创作配置参数
 │   ├── status.json   # 当前进度状态
+│   ├── WORLDBUILDER_PROGRESS.json # 全流程阶段进度追踪（断点恢复依据）
 │   └── history.log   # 操作历史记录
 ├── topic/            # 选题阶段输出
 │   ├── report.md     # 完整选题策划报告
@@ -358,7 +359,6 @@ flowchart LR
 │   ├── plot-outline.json # 剧情大纲结构化数据
 │   └── chapter-outlines.json # **完整章节细纲（核心输出）**
 ├── write/            # 创作阶段输出
-│   ├── draft/        # 章节草稿
 │   ├── original/     # 原始章节备份（review/polish修改前自动备份）
 │   └── progress.json # 创作进度跟踪
 ├── review/           # 审查阶段输出
@@ -377,7 +377,7 @@ flowchart LR
     └── report.md     # 完稿校验报告
 ```
 
-#### 进度保存机制（WORKBUILDER_PROGRESS.json）
+#### 进度保存机制（WORLDBUILDER_PROGRESS.json，位于 .sumeru/session/）
 
 ```json
 {
@@ -455,13 +455,16 @@ flowchart LR
 
 #### 数据生命周期管理
 1. **自动保存**：每完成一个阶段自动将数据写入对应目录，支持幂等写入
-2. **进度追踪**：每个阶段完成后自动更新 `WORKBUILDER_PROGRESS.json`，记录阶段状态与完成时间
+2. **进度追踪**：每个阶段完成后自动更新 `.sumeru/session/WORLDBUILDER_PROGRESS.json`，记录阶段状态与完成时间
 3. **版本控制**：关键节点自动生成版本快照，命名格式 `{stage}-{timestamp}.json`
 4. **断点恢复**：恢复创作时自动从 `.sumeru/` 目录读取对应阶段数据
 5. **清理规则**：支持清理所有中间数据，默认保留最近3个版本
 6. **数据复用**：可直接引用其他项目的 `.sumeru/` 目录数据，实现世界观/人设复用
 
-### 高级配置：自定义阶段钩子
+### 高级配置：自定义阶段钩子（规划中）
+
+> ⚠️ 该能力为规划中特性，当前版本暂未实现，仅作为扩展接口预留。
+
 通过配置文件 `{output-dir}/hooks.json` 可以在各阶段前后插入自定义处理：
 ```json
 {

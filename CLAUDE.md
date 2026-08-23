@@ -22,9 +22,9 @@ skills/
 ```
 
 每个Skill目录采用统一结构：
-- `[skill-name].md`：Skill元数据定义与使用说明
-- `scripts/`：存放Skill执行所需的脚本文件
-- `references/`：存放参考资料、模板、知识库等资源
+- `SKILL.md`：Skill元数据定义与使用说明
+- `scripts/`（按需创建）：存放Skill执行所需的脚本文件
+- `references/`（按需创建）：存放参考资料、模板、知识库等资源
 
 ## 常用命令速查
 ### 全流程创作
@@ -116,7 +116,7 @@ skills/
 ### 5. sumeru-review 逻辑审查Skill
 **定位**：内容质检官，适用于"检查有没有bug"、"时间线对不对"、"有没有剧情矛盾"等需求
 **核心能力**：
-- **三阶段审查修复流程**：全局审查→章节细节审查（Agent Team并行，遵循3章/Agent全局约束）→轻量修复+重写修复计划
+- **三阶段审查修复流程**：全局审查→章节细节审查（Agent Team并行，遵循3章/Agent全局约束）→轻量修复+严重问题自动修订大纲并重写章节（底线问题零遗漏核验）
 - 时间线校验：绝对/相对时间、季节、年龄、事件顺序一致性检查
 - 剧情一致性校验：设定、物品状态、信息边界、地理空间合理性检查
 - 逻辑漏洞检测：因果关系、人物动机、能力设定、社会常识合理性检查
@@ -157,7 +157,7 @@ skills/
 ├── write/            # 创作阶段中间数据
 │   └── original/     # 原始章节备份（review/polish修改前自动备份）
 ├── review/           # 审查阶段中间数据
-│   └── fix-plan.json # 重写修复计划（标记需要重写的章节）
+│   └── fix-plan.json # 修复执行记录（记录所有已执行的修复操作详情）
 ├── polish/           # 润色阶段中间数据
 └── finalize/         # 完稿阶段中间数据
 ```
@@ -177,9 +177,9 @@ skills/
 新增Skill需遵循现有架构规范：
 1. 在`skills/`下创建独立目录，目录名与Skill名一致（英文小写，短横线分隔）
 2. 目录内必须包含：
-   - 与目录同名的`.md` Skill定义文件，包含完整元数据（name、description、type: skill）
-   - 空的`scripts/`目录，存放执行逻辑
-   - 空的`references/`目录，存放领域知识与模板
+   - `SKILL.md` Skill定义文件，包含完整元数据（name、description、type: skill）
+   - `scripts/`目录（按需创建）：存放执行逻辑脚本
+   - `references/`目录（按需创建）：存放领域知识与模板
 3. Skill描述中必须包含触发关键词与排除规则，确保被正确识别调用
 4. 命令参数采用自然语言描述，避免命令行风格（如 `--param`），保持用户友好
 
@@ -213,10 +213,10 @@ skills/
    - **调度计算**：所需Agent数 = ceil(总章节数 / 3)，分配策略为按章节顺序连续分配
    - **Skill内引用方式**：各Skill中使用"⚠️ 遵循全局约束：每个子Agent最多负责3个章节（详见 AGENTS.md '子Agent并行处理规则'）"格式引用，不再完整重述
 6. **自动备份规则（全局强制约束）**：review修复和polish润色直接修改 `chapters/` 目录中的文件，修改前自动备份原始章节到 `.sumeru/write/original/`，确保可回滚。无需用户手动确认应用步骤。
-7. **Skill间解耦规则**：禁止下游Skill直接调用上游Skill。review不得直接调用sumeru-write进行重写修复，而是生成修复计划（fix-plan.json），由worldbuilder编排或用户手动调用sumeru-write处理。
+7. **Skill间解耦规则**：禁止下游Skill直接调用上游Skill（如review不得调用sumeru-write）。review发现严重问题时，由自身使用子Agent（遵循3章/Agent约束）自动修订大纲并重写对应章节，修复结果直接修改 chapters/（自动备份到 .sumeru/write/original/），全部修复操作记录到 fix-plan.json，供worldbuilder编排确认和用户查阅。
 
 ## 核心文件索引
 - `AGENTS.md` - 本文件，全局规则与命令说明
-- `skills/*/[skill-name].md` - 各Skill的详细使用文档与参数说明
-- `scripts/` - 跨Skill共享的工具脚本
-- `references/` - 全局公共参考资料（平台规范、通用模板等）
+- `skills/*/SKILL.md` - 各Skill的详细使用文档与参数说明
+- `skills/*/scripts/` - Skill专属工具脚本（按需存在）
+- `skills/*/references/` - Skill专属参考资料（按需存在）
